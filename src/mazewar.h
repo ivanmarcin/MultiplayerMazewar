@@ -51,6 +51,8 @@ SOFTWARE.
 #include "constants.h"
 #include "datagram.h"
 #include <string>
+#include <sys/time.h>
+
 /* fundamental constants */
 
 #ifndef	TRUE
@@ -165,6 +167,16 @@ public:
 	bool playing;
 	Loc	x, y;
 	Direction dir;
+
+  /*** Rat Class Extensions *****/
+  char* name;
+  uint16_t score;
+  uint16_t netPlayerId;
+  uint16_t lastSequenceNumberProcessed;
+  uint16_t LastKillRequestSeqNum;
+  uint16_t LastKillAckSeqNum;
+  double lastNetPacketReceivedTimeStamp;
+  /*****/
 };
 
 typedef	RatAppearance			RatApp_type [MAX_RATS];
@@ -300,6 +312,8 @@ void FlipBitmaps(void);
 void bitFlip(BitCell *, int size);
 void SwapBitmaps(void);
 void byteSwap(BitCell *, int size);
+void showMissile(Loc x_loc, Loc y_loc, Direction dir, Loc prev_x, Loc prev_y, bool clear);
+
 
 
 /* init.c */
@@ -340,12 +354,33 @@ void DoViewUpdate(void);
 void sendPacketToPlayer(RatId);
 void processPacket(MWEvent *);
 void netInit(void);
+short unsigned int NextFreeRatId();
+void RegisterPlayer(SyncRequest* dg);
+
 /** custom functions **/
-void NetUpdateDirection();
+double CurrentTimeInMillis();
+short unsigned int RatIdFromPlayerId(uint16_t playerID);
+void NetUpdateDirection(int lastX, int lastY);
+void NetSendKeepAlive();
+void NetSendSyncResponse(uint8_t* payload);
+void NetSendSyncRequest();
 void sendPacket(Datagram* data);
+void UpdatePlayerFromSyncAck(Datagram* dg);
 void NetSendKeepAlive();
 void log(char* str);
-void log_bytearr(uint8_t* buffer);
+void log_bytearr(uint8_t* buffer, int size);
+void NetUpdatePosition(Datagram* dg);
+void NetUpdateQuit(Datagram* dg);
+void NetUpdateKeepAlive(Datagram* dg);
+int RatOccupiesXY(Loc x, Loc y, int ratId);
+void MoveMissile();
+void NetSendKillRequest(int ratHit);
+void NetReceiveKillAck(uint8_t* payload);
+void NetReceiveKillDenied(uint8_t* payload);
+void NetSendKillAck(uint8_t* payload);
+void NetSendKillDenied(uint8_t* payload);
+void DissappearRat(int ratHit);
+void Respawn();
 
 /* winsys.c */
 void InitWindow(int, char **);

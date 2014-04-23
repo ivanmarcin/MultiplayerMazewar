@@ -11,6 +11,7 @@
 #define MESSAGE_FLAG_RELIABILITY  0x1
 
 /** Message Types **/
+#define REL_ACK                   0x00
 #define SYNC_REQ                  0x01
 #define SYNC_ACK                  0x02
 #define KILL_REQ                  0x30
@@ -36,6 +37,7 @@
 #define DATAGRAM_SIZE_SYNC_ACK    40
 #define DATAGRAM_SIZE_KEEPALIVE   18
 #define DATAGRAM_SIZE_KILLS       24
-
+#define RAT_ID_NOT_FOUND          999
+#define SCORE_OFFSET              32768
 
 #endif
