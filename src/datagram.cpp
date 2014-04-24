@@ -28,6 +28,9 @@ void log(char* str)
   }
 }
 
+/**
+* Pretty print an incoming datagram
+**/
 void log_bytearr(uint8_t* buffer, int size)
 {
   if(LOGGING)
@@ -162,7 +165,8 @@ void Datagram::SetHeaderFromDatagram(uint8_t* bytes)
   //byte 2 has type
   headerMessageType = bytes[2];
 
-  int position = 3; //byte 3 starts with reliability flag
+  //byte 3 starts with reliability flag
+  int position = 3;
 
   memcpy(&(isReliable), bytes + position, 1); position += 1;
   memcpy(&(playerID), bytes + position, 4); position += 4;
@@ -208,6 +212,7 @@ Datagram* Datagram::ByteArrayToDatagram(uint8_t* data)
   if (!(data[0]==0xCA && data[1]==0xFE))
   {
     log("Not a 0xCAFE datagram");
+    val = new Datagram(); //no-op datagram
     return val;
   }
 
@@ -239,12 +244,16 @@ Datagram* Datagram::ByteArrayToDatagram(uint8_t* data)
       val = new KillRequest();
       break;
     case KILL_ACK:
-      log("KILL_ACK received");
+      log("KILL_RES received");
       val = new KillResponse();
       break;
     case KILL_DEN:
       log("KILL_DEN received");
       val = new KillDenied();
+      break;
+    case REL_ACK:
+      log("KILL_ACK received");
+      val = new KillAck();
       break;
     default:
       log("UNDEFINED packet received");
@@ -339,7 +348,7 @@ SyncRequest::SyncRequest() : Datagram()
 * y = Y coord
 * d = facing direction
 **/
-void SyncRequest::SetDatagram(uint16_t x, uint16_t y, uint16_t d, char* name, uint16_t score)
+void SyncRequest::SetDatagram(uint16_t x, uint16_t y, uint16_t d, char* name, int score)
 {
   _x = x;
   _y = y;
@@ -347,7 +356,6 @@ void SyncRequest::SetDatagram(uint16_t x, uint16_t y, uint16_t d, char* name, ui
   _score = score;
   _playerName = name;
 };
-
 
 /**
 * Parse values from byte array - received from a datagram
@@ -357,6 +365,7 @@ void SyncRequest::SetDatagram(uint8_t* bytes)
   int position = DATAGRAM_SIZE_HEADER;
 
   //initialize the name array
+  int score = 0;
   _playerName = new char[MAX_NAME_LENGTH];
   memset(_playerName, 0, MAX_NAME_LENGTH);
 
@@ -364,12 +373,12 @@ void SyncRequest::SetDatagram(uint8_t* bytes)
   memcpy(&(_x)         , bytes + position , 2); position += 2;
   memcpy(&(_y)         , bytes + position , 2); position += 2;
   memcpy(&(_d)         , bytes + position , 2); position += 2;
-  memcpy(&(_score)     , bytes + position , 2);
+  memcpy(&(score)     , bytes + position , 2);
 
   _x = ntohs(_x);
   _y = ntohs(_y);
   _d = ntohs(_d);
-  _score = ntohs(_score);
+  _score = ntohs(score) - SCORE_OFFSET;
 
   log("----- SyncRequest::SetDatagram buffer -----");
   log_bytearr(bytes, DATAGRAM_SIZE_SYNC_REQ);
@@ -386,7 +395,7 @@ uint8_t* SyncRequest::GetDatagram()
   uint16_t tx = htons(_x);
   uint16_t ty = htons(_y);
   uint16_t td = htons(_d);
-  uint16_t tscore = htons(_score);
+  uint16_t tscore = htons(_score + SCORE_OFFSET);
 
   memcpy(buffer + DATAGRAM_SIZE_HEADER     , _playerName, 16);
   memcpy(buffer + DATAGRAM_SIZE_HEADER + 16, &(tx), 2);
@@ -416,7 +425,7 @@ SyncResponse::SyncResponse() : Datagram()
 /**
 * Build a sync ack packet
 **/
-void SyncResponse::SetDatagram(uint16_t x, uint16_t y, uint16_t d, char* name, uint16_t score)
+void SyncResponse::SetDatagram(uint16_t x, uint16_t y, uint16_t d, char* name, int score)
 {
   _x = x;
   _y = y;
@@ -431,6 +440,7 @@ void SyncResponse::SetDatagram(uint16_t x, uint16_t y, uint16_t d, char* name, u
 void SyncResponse::SetDatagram(uint8_t* bytes)
 {
   int position = DATAGRAM_SIZE_HEADER;
+  int score;
 
    //initialize the name array
   _playerName = new char[MAX_NAME_LENGTH];
@@ -440,17 +450,16 @@ void SyncResponse::SetDatagram(uint8_t* bytes)
   memcpy(&(_x)         , bytes + position , 2); position += 2;
   memcpy(&(_y)         , bytes + position , 2); position += 2;
   memcpy(&(_d)         , bytes + position , 2); position += 2;
-  memcpy(&(_score)     , bytes + position , 2);
+  memcpy(&(score)     , bytes + position , 2);
 
   _x = ntohs(_x);
   _y = ntohs(_y);
   _d = ntohs(_d);
-  _score = ntohs(_score);
+  _score = ntohs(score) - SCORE_OFFSET;
 
   cout << "SyncResponse: " << " PlayerName:" << _playerName << "- X:" << _x << "- Y:" << _y << "- D:" << _d << " -Score: " << _score;
   log("----- SyncResponse::SetDatagram buffer -----");
   log_bytearr(bytes, DATAGRAM_SIZE_SYNC_ACK);
-
 }
 
 /**
@@ -463,7 +472,7 @@ uint8_t* SyncResponse::GetDatagram()
   uint16_t tx = htons(_x);
   uint16_t ty = htons(_y);
   uint16_t td = htons(_d);
-  uint16_t tscore = htons(_score);
+  uint16_t tscore = htons(_score + SCORE_OFFSET);
 
   memcpy(buffer + DATAGRAM_SIZE_HEADER     , _playerName, 15);
   memcpy(buffer + DATAGRAM_SIZE_HEADER + 16, &(tx), 2);
@@ -492,7 +501,7 @@ KeepAlive::KeepAlive() : Datagram()
 /**
 * Build a Keep Alive packet
 **/
-void KeepAlive::SetDatagram(uint16_t score)
+void KeepAlive::SetDatagram(int score)
 {
   _score = score;
 };
@@ -504,10 +513,9 @@ void KeepAlive::SetDatagram(uint16_t score)
 void KeepAlive::SetDatagram(uint8_t* bytes)
 {
   int position = DATAGRAM_SIZE_HEADER;
-
-  memcpy(&(_score), bytes + position , 2);
-
-  _score = ntohs(_score);
+  int tscore = 0;
+  memcpy(&(tscore), bytes + position , 2);
+  _score = ntohs(tscore) - SCORE_OFFSET;
 }
 
 
@@ -517,13 +525,10 @@ void KeepAlive::SetDatagram(uint8_t* bytes)
 uint8_t* KeepAlive::GetDatagram()
 {
   uint8_t* buffer = InitDatagram(DATAGRAM_SIZE_KEEPALIVE);
-
-  uint16_t tscore = htons(_score);
-
+  uint16_t tscore = (_score + SCORE_OFFSET);
+  tscore = htons(tscore);
   memcpy(buffer + DATAGRAM_SIZE_HEADER , &(tscore), 2);
 
-  //log("----- KeepAlive::GetDatagram buffer -----");
-  //log_bytearr(buffer, DATAGRAM_SIZE_KEEPALIVE);
   return buffer;
 };
 
@@ -550,10 +555,7 @@ void Leave::SetDatagram(){};
 /**
 * Parse values from byte array - received from a datagram
 **/
-void Leave::SetDatagram(uint8_t* bytes)
-{
- // no- op
-}
+void Leave::SetDatagram(uint8_t* bytes){}
 
 /**
 * Returns a Datagram of type KeepAlive
@@ -584,7 +586,7 @@ KillRequest::KillRequest() : Datagram()
 /**
 * Build a KillReq packet
 **/
-void KillRequest::SetDatagram(uint16_t x, uint16_t y, uint16_t killedPlayerId)
+void KillRequest::SetDatagram(uint16_t x, uint16_t y, uint32_t killedPlayerId)
 {
   _x = x;
   _y = y;
@@ -644,7 +646,7 @@ KillResponse::KillResponse() : Datagram()
 /**
 * Build a KillAck packet
 **/
-void KillResponse::SetDatagram(uint16_t x, uint16_t y, uint16_t killerPlayerId)
+void KillResponse::SetDatagram(uint16_t x, uint16_t y, uint32_t killerPlayerId)
 {
   _x = x;
   _y = y;
@@ -705,7 +707,7 @@ KillDenied::KillDenied() : Datagram()
 /**
 * Build a KillDenied packet
 **/
-void KillDenied::SetDatagram(uint16_t x, uint16_t y, uint16_t killerPlayerId)
+void KillDenied::SetDatagram(uint16_t x, uint16_t y, uint32_t killerPlayerId)
 {
   _x = x;
   _y = y;
@@ -745,6 +747,50 @@ uint8_t* KillDenied::GetDatagram()
 
   log("----- KillDenied::GetDatagram buffer -----");
   log_bytearr(buffer, DATAGRAM_SIZE_KILLS);
+  return buffer;
+};
+
+
+/***********************************************************/
+/***** Kill Ack *****/
+/***********************************************************/
+
+/**
+* Initializes an instance of a packet containing a Kill Denied command
+**/
+KillAck::KillAck() : Datagram()
+{
+  headerMessageType = REL_ACK;
+  isReliable        = false;
+};
+
+/**
+* Build a KillDenied packet
+**/
+void KillAck::SetDatagram(uint32_t killerPlayerId, uint32_t sequenceNum)
+{
+  _killerPlayerId = killerPlayerId;
+  headerAckSequenceNumber = sequenceNum;
+};
+
+/**
+* Parse values from byte array - received from a datagram
+**/
+void KillAck::SetDatagram(uint8_t* bytes)
+{
+  int position = DATAGRAM_SIZE_HEADER;
+  memcpy(&(_killerPlayerId), bytes + position, 4); position += 4;
+  _killerPlayerId = ntohl(_killerPlayerId);
+}
+
+/**
+* Returns a Datagram of type KillAck
+**/
+uint8_t* KillAck::GetDatagram()
+{
+  uint8_t* buffer = InitDatagram(DATAGRAM_SIZE_KILLS);
+  uint32_t tkillerId = htonl(_killerPlayerId);
+  memcpy(buffer + DATAGRAM_SIZE_HEADER    , &(tkillerId), 4);
   return buffer;
 };
 

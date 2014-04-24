@@ -170,8 +170,8 @@ public:
 
   /*** Rat Class Extensions *****/
   char* name;
-  uint16_t score;
-  uint16_t netPlayerId;
+  int score;
+  uint32_t netPlayerId;
   uint16_t lastSequenceNumberProcessed;
   uint16_t LastKillRequestSeqNum;
   uint16_t LastKillAckSeqNum;
@@ -359,7 +359,8 @@ void RegisterPlayer(SyncRequest* dg);
 
 /** custom functions **/
 double CurrentTimeInMillis();
-short unsigned int RatIdFromPlayerId(uint16_t playerID);
+short unsigned int RatIdFromPlayerId(uint32_t playerID);
+int RatOccupiesXY(Loc x, Loc y, int ratId);
 void NetUpdateDirection(int lastX, int lastY);
 void NetSendKeepAlive();
 void NetSendSyncResponse(uint8_t* payload);
@@ -372,15 +373,17 @@ void log_bytearr(uint8_t* buffer, int size);
 void NetUpdatePosition(Datagram* dg);
 void NetUpdateQuit(Datagram* dg);
 void NetUpdateKeepAlive(Datagram* dg);
-int RatOccupiesXY(Loc x, Loc y, int ratId);
 void MoveMissile();
 void NetSendKillRequest(int ratHit);
 void NetReceiveKillAck(uint8_t* payload);
 void NetReceiveKillDenied(uint8_t* payload);
 void NetSendKillAck(uint8_t* payload);
 void NetSendKillDenied(uint8_t* payload);
+void NetSendReliabilityAck(uint32_t toPlayer, unsigned int sequenceNum);
 void DissappearRat(int ratHit);
 void Respawn();
+void ExpireRats();
+
 
 /* winsys.c */
 void InitWindow(int, char **);

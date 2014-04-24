@@ -18,7 +18,6 @@ class Datagram
     unsigned int   playerID;
     unsigned int   headerAckSequenceNumber;
 
-  protected:
     //header
     uint8_t  headerMessageType;
     unsigned short headerProtocol;
@@ -59,12 +58,12 @@ class SyncRequest : public Datagram
   public:
     SyncRequest();
     virtual void SetDatagram(uint8_t* fromByteArray);
-    virtual void SetDatagram(uint16_t x, uint16_t y, uint16_t d, char* name, uint16_t score);
+    virtual void SetDatagram(uint16_t x, uint16_t y, uint16_t d, char* name, int score);
     virtual uint8_t* GetDatagram();
     uint16_t _x;
     uint16_t _y;
     uint16_t _d;
-    uint16_t _score;
+    int _score;
     char* _playerName;
 };
 
@@ -75,12 +74,12 @@ class SyncResponse : public Datagram
   public:
     SyncResponse();
     virtual void SetDatagram(uint8_t* fromByteArray);
-    virtual void SetDatagram(uint16_t x, uint16_t y, uint16_t d, char* name, uint16_t score);
+    virtual void SetDatagram(uint16_t x, uint16_t y, uint16_t d, char* name, int score);
     virtual uint8_t* GetDatagram();
     uint16_t _x;
     uint16_t _y;
     uint16_t _d;
-    uint16_t _score;
+    int _score;
     char* _playerName;
 };
 
@@ -91,9 +90,9 @@ class KeepAlive : public Datagram
   public:
     KeepAlive();
     virtual void SetDatagram(uint8_t* fromByteArray);
-    virtual void SetDatagram(uint16_t score);
+    virtual void SetDatagram(int score);
     virtual uint8_t* GetDatagram();
-    uint16_t _score;
+    int _score;
 };
 
 /***********************************************************/
@@ -116,11 +115,11 @@ class KillRequest : public Datagram
   public:
     KillRequest();
     virtual void SetDatagram(uint8_t* fromByteArray);
-    virtual void SetDatagram(uint16_t x, uint16_t y, uint16_t killedPlayerId);
+    virtual void SetDatagram(uint16_t x, uint16_t y, uint32_t killedPlayerId);
     virtual uint8_t* GetDatagram();
     uint16_t _x;
     uint16_t _y;
-    uint16_t _killedPlayerId;
+    uint32_t _killedPlayerId;
 };
 
 class KillResponse : public Datagram
@@ -128,11 +127,11 @@ class KillResponse : public Datagram
   public:
     KillResponse();
     virtual void SetDatagram(uint8_t* fromByteArray);
-    virtual void SetDatagram(uint16_t x, uint16_t y, uint16_t killerPlayerId);
+    virtual void SetDatagram(uint16_t x, uint16_t y, uint32_t killerPlayerId);
     virtual uint8_t* GetDatagram();
     uint16_t _x;
     uint16_t _y;
-    uint16_t _killerPlayerId;
+    uint32_t _killerPlayerId;
 
 };
 
@@ -143,10 +142,22 @@ class KillDenied : public Datagram
   public:
     KillDenied();
     virtual void SetDatagram(uint8_t* fromByteArray);
-    virtual void SetDatagram(uint16_t x, uint16_t y, uint16_t _killerPlayerId);
+    virtual void SetDatagram(uint16_t x, uint16_t y, uint32_t _killerPlayerId);
     virtual uint8_t* GetDatagram();
     uint16_t _x;
     uint16_t _y;
-    uint16_t _killerPlayerId;
+    uint32_t _killerPlayerId;
+};
+
+/***********************************************************/
+
+class KillAck : public Datagram
+{
+  public:
+    KillAck();
+    virtual void SetDatagram(uint8_t* fromByteArray);
+    virtual void SetDatagram(uint32_t _killerPlayerId, unsigned int sequence);
+    virtual uint8_t* GetDatagram();
+    uint32_t _killerPlayerId;
 };
 #endif

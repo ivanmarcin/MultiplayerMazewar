@@ -145,6 +145,8 @@ play(void)
 
     MoveMissile();
 
+    ExpireRats();
+
 		/* Any info to send over network? */
 	}
 }
@@ -406,16 +408,39 @@ void MoveMissile()
 }
 
 /**
+* Remove players from the game which have timed out.
+**/
+void ExpireRats()
+{
+  short unsigned int i = 1;
+  for( i = 1; i < MAX_RATS; i++)
+  {
+    if (M->rat(i).playing)
+    {
+      if (CurrentTimeInMillis() > M->rat(i).lastNetPacketReceivedTimeStamp + RAT_TIMEOUT_MILLIS)
+      {
+        Rat r = M->rat(i);
+        r.playing = false;
+        M->ratIs(r, i);
+
+        DissappearRat(i);
+        UpdateScoreCard(i);
+      }
+    }
+  }
+}
+
+/**
 * If we shoot - jst check there's only 1 live missle per game
 * refresh rate is player can shoot as soon as old missle is destroyed
 **/
 void shoot()
 {
-	M->scoreIs( M->score().value()-1 );
-	UpdateScoreCard(M->myRatId().value());
-
   if(!missileIsLive)
   {
+    M->scoreIs( M->score().value()-1 );
+    UpdateScoreCard(M->myRatId().value());
+
     missileIsLive = true;
     missileX = MY_X_LOC;
     missileY = MY_Y_LOC;
@@ -479,7 +504,6 @@ void NewPosition(MazewarInstance::Ptr m)
 	}
 
 	/* prevent a blank wall at first glimpse */
-
 	if (!m->maze_[(newX.value())+1][(newY.value())]) dir = Direction(NORTH);
 	if (!m->maze_[(newX.value())-1][(newY.value())]) dir = Direction(SOUTH);
 	if (!m->maze_[(newX.value())][(newY.value())+1]) dir = Direction(EAST);
@@ -579,8 +603,6 @@ void DoViewUpdate()
 **/
 void sendPacket(Datagram* data)
 {
-  //TODO: drop random packets
-  //TODO: mess with packet order
   uint8_t* dt = data->GetDatagram();
 
   if (sendto((int)M->theSocket(), dt, 100, 0,
@@ -618,8 +640,8 @@ void Respawn()
 **/
 void NetSendKillRequest(int ratId)
 {
+  missileIsLive=false;
   KillRequest* kr = new KillRequest();
-
   kr->SetDatagram(M->rat(ratId).x.value(), M->rat(ratId).y.value(), M->rat(ratId).netPlayerId);
   sendPacket(kr);
 }
@@ -633,7 +655,7 @@ void NetReceiveKillRequest(uint8_t* payload)
   KillRequest* kr = dynamic_cast<KillRequest*>(dg->ByteArrayToDatagram(payload));
 
   // if this packet was destineed to me:
-  if (kr->_killedPlayerId == M->rat(0).netPlayerId)
+  if (kr->_killedPlayerId == dg->headerPlayerID)
   {
     cout << "Kill request to me at: X: " << kr->_x << "  ,y: " << kr->_y << "  when I'm at X: " << MY_X_LOC << " , y: " << MY_Y_LOC << "\n";
     if(kr->_x == MY_X_LOC && kr->_y == MY_Y_LOC)
@@ -649,6 +671,9 @@ void NetReceiveKillRequest(uint8_t* payload)
       NetSendKillDenied(payload);
     }
   }
+
+  delete dg;
+  delete kr;
 }
 
 void NetReceiveKillAck(uint8_t* payload)
@@ -657,47 +682,84 @@ void NetReceiveKillAck(uint8_t* payload)
   KillResponse* kr = dynamic_cast<KillResponse*>(dg->ByteArrayToDatagram(payload));
 
   // if this packet was destineed to me:
-  if (kr->_killerPlayerId == M->rat(0).netPlayerId)
+  if (kr->_killerPlayerId == dg->headerPlayerID)
   {
     // 5 points of the kill, plus restoring the point lost from shooting a missile.
-    M->scoreIs( M->score().value()+11);
+    M->scoreIs( M->score().value() + 11);
     updateView = TRUE;
     UpdateScoreCard(M->myRatId().value());
-    //send ack
-    //sendPacket(dg);
+    NetSendReliabilityAck(kr->playerID, kr->sequenceNumber);
   }
+  delete dg;
+  delete kr;
 }
 
+/**
+* Process a kill denied packet.
+**/
 void NetReceiveKillDenied(uint8_t* payload)
 {
   Datagram *dg = new Datagram();
-  KillDenied* kd = dynamic_cast<KillDenied*>(kd->ByteArrayToDatagram(payload));
-  if (kd->_killerPlayerId == M->rat(0).netPlayerId)
+  KillDenied* kd = dynamic_cast<KillDenied*>(dg->ByteArrayToDatagram(payload));
+  if (kd->_killerPlayerId == dg->headerPlayerID)
   {
-    //send ack
-    //sendPacket(dg);
+    NetSendReliabilityAck(kd->playerID, kd->sequenceNumber);
   }
+  delete dg;
+  delete kd;
 }
 
+/**
+* Confirm a kill on a given position
+* kill confirmed in first come - first served as per protocol.
+**/
 void NetSendKillAck(uint8_t* payload)
 {
   Datagram *dg = new Datagram();
   KillRequest* kr = dynamic_cast<KillRequest*>(dg->ByteArrayToDatagram(payload));
   KillResponse* kd = new KillResponse();
   kd->SetDatagram(kr->_x, kr->_y, kr->playerID);
+
+  NetSendReliabilityAck(kr->playerID, kr->sequenceNumber);
   sendPacket(kd);
+
+  delete dg;
+  delete kd;
+  delete kr;
 }
 
-
+/**
+* Deny a kill because it was akced to somebody else before
+* and player is no longer in that position
+**/
 void NetSendKillDenied(uint8_t* payload)
 {
   Datagram *dg = new Datagram();
   KillRequest* kr = dynamic_cast<KillRequest*>(dg->ByteArrayToDatagram(payload));
   KillDenied* kd = new KillDenied();
-
   kd->SetDatagram(kr->_x, kr->_y, kr->playerID);
+
+  NetSendReliabilityAck(kr->playerID, kr->sequenceNumber);
   sendPacket(kd);
+
+  delete dg;
+  delete kd;
+  delete kr;
 }
+
+/**
+* Send an ACK to reliable communications
+**/
+void NetSendReliabilityAck(uint32_t toPlayer, unsigned int sequenceNum)
+{
+  KillAck* k = new KillAck();
+  k->SetDatagram(toPlayer, sequenceNum);
+  sendPacket(k);
+  log("---Sending Reliability Ack: --");
+  log_bytearr(k->GetDatagram(), 20);
+  delete k;
+}
+
 
 /**
 * Send a network update with the corresponding change of direction.
@@ -715,6 +777,7 @@ void NetUpdateDirection(int lastX, int lastY)
 	Move* mov = new Move();
 	mov->SetDatagram(MY_X_LOC, MY_Y_LOC, MY_DIR);
 	sendPacket(mov);
+  delete mov;
 }
 
 /**
@@ -746,12 +809,13 @@ void NetSendKeepAlive()
 
 	if (keepAliveCounter < 1)
 	{
-		keepAliveCounter = 500;
+		keepAliveCounter = 5;
 		KeepAlive* ka = new KeepAlive();
-		ka->SetDatagram( (M->score().value() + SCORE_OFFSET) );
-		//log("Sending out KeepAlive");
-    //cout << "Sending with keepalive SCORE offsetted :" << M->score().value() + SCORE_OFFSET << " and Score in datagram:" << ka->_score;
-		sendPacket(ka);
+		ka->SetDatagram( M->score().value());
+		log("Sending out KeepAlive");
+    cout << "Sending with keepalive SCORE offsetted :" << M->score().value() + SCORE_OFFSET << " and Score in datagram:" << ka->_score;
+		log_bytearr(ka->GetDatagram(),20);
+    sendPacket(ka);
 		delete ka;
 	}
   keepAliveCounter--;
@@ -774,6 +838,7 @@ void UpdateOrRegisterPlayerFromSyncAck(uint8_t* payload)
 
   RegisterPlayer( tmp );
 
+  delete dg;
   delete tmp;
   delete sr;
 }
@@ -818,9 +883,7 @@ void RegisterPlayer(SyncRequest* sr)
   r.y = sr->_y;
   r.dir = sr->_d;
   r.name = sr->_playerName;
-  int tmpscore = sr->_score;
-  tmpscore = (SCORE_OFFSET - tmpscore) * (-1);
-  r.score = tmpscore;
+  r.score = int(sr->_score);
   r.netPlayerId = sr->playerID;
   r.lastNetPacketReceivedTimeStamp = CurrentTimeInMillis();
   r.lastSequenceNumberProcessed = 0;
@@ -829,7 +892,7 @@ void RegisterPlayer(SyncRequest* sr)
 
   M->ratIs(r, freeRatId);
   updateView = TRUE;
-  UpdateScoreCard(1);
+  UpdateScoreCard(freeRatId);
 }
 
 
@@ -858,7 +921,7 @@ short unsigned int NextFreeRatId()
 void NetSendSyncRequest()
 {
   SyncRequest* sr = new SyncRequest();
-  sr->SetDatagram(MY_X_LOC, MY_Y_LOC, MY_DIR, M->myName_, (M->score().value() + SCORE_OFFSET));
+  sr->SetDatagram(MY_X_LOC, MY_Y_LOC, MY_DIR, M->myName_, M->score().value() );
   sendPacket(sr);
   delete sr;
 }
@@ -870,7 +933,7 @@ void NetSendSyncRequest()
 void NetSendSyncResponse(uint8_t* payload)
 {
   SyncResponse* sr = new SyncResponse();
-  sr->SetDatagram(MY_X_LOC, MY_Y_LOC, MY_DIR, M->myName_, (M->score().value() + SCORE_OFFSET));
+  sr->SetDatagram(MY_X_LOC, MY_Y_LOC, MY_DIR, M->myName_, M->score().value() );
   sendPacket(sr);
   delete sr;
 }
@@ -884,17 +947,17 @@ void NetUpdateKeepAlive(Datagram* dg)
   KeepAlive* ka = dynamic_cast<KeepAlive*>(dg);
   short unsigned int ratId = RatIdFromPlayerId(dg->playerID);
 
-  Rat r = M->rat(ratId);
-  // do the offset calculation
-  int tmpscore = ka->_score;
-  tmpscore = (SCORE_OFFSET - tmpscore) * (-1);
-  r.score = tmpscore;
-  //cout << "Updating score via keepalive RatID:" << ratId << "  score:" << r.score;
-  M->ratIs(r, ratId);
+  Rat _r = M->rat(RatIndexType(ratId));
+  _r.score =  ka->_score;
+  M->ratIs(_r, ratId);
   updateView = TRUE;
-  UpdateScoreCard(1);
+  UpdateScoreCard(ratId);
 }
 
+/**
+* Returns the Rat id of which rat is occupying the requested position
+* RatId sent is used to avoid confusion if checking the same rat vs same rat,
+**/
 int RatOccupiesXY(Loc x, Loc y,int ratId)
 {
   short unsigned int i = 1;
@@ -962,14 +1025,14 @@ void NetUpdateQuit(Datagram* dg)
 /**
 * Returns the Rat ID from a playerID
 **/
-short unsigned int RatIdFromPlayerId(uint16_t playerID)
+short unsigned int RatIdFromPlayerId(uint32_t playerID)
 {
   short unsigned int i = 0;
   cout << "RatIdFromPlayerId Get for player: " << playerID << "\n";
   for( i = 1; i < MAX_RATS; i++)
   {
     Rat tmp = M->rat(i);
-    if( tmp.netPlayerId == playerID)
+    if( tmp.netPlayerId == playerID )
     {
       return i;
     }
@@ -1031,6 +1094,12 @@ void processPacket (MWEvent *eventPacket)
       }
     }
 
+    // handle reliable packets
+    if (command->isReliable)
+    {
+      NetSendReliabilityAck(command->playerID, command->sequenceNumber);
+    }
+
     // Handle each packet Type;
     switch (command->GetType())
     {
@@ -1064,15 +1133,19 @@ void processPacket (MWEvent *eventPacket)
       case KILL_DEN:
         NetReceiveKillDenied(payload);
         break;
-
+      case REL_ACK:
+        //empty packet handling not needed here.
+        break;
       default:
         log("TopLevel::ProcessPacket -- Received unknown packet" );
         log_bytearr(command->GetDatagram(), 256);
         break;
     }
 
-
-
+    //Update timer
+    Rat r = M->rat(RatIdFromPlayerId(command->playerID));
+    r.lastNetPacketReceivedTimeStamp = CurrentTimeInMillis();
+    M->ratIs(r, RatIdFromPlayerId(command->playerID));
     delete command;
 
   // Redraw and redfresh Scoring
@@ -1155,7 +1228,7 @@ netInit()
 		MWError("setsockopt failed (IP_ADD_MEMBERSHIP)");
 	}
 
-	/*SNIPPET FROM GOBIND: testing to listen to my own packets, remove this before submitting*/
+	/*SNIPPET FROM GOBIND: testing to listen to my own packets*/
 	int loop = 0;
 	if (setsockopt(M->theSocket(), IPPROTO_IP, IP_MULTICAST_LOOP, &loop, sizeof(loop)) < 0) {
 		printf("%s\n", "Failed to setup self loop" );

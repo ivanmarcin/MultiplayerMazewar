@@ -39,5 +39,6 @@
 #define DATAGRAM_SIZE_KILLS       24
 #define RAT_ID_NOT_FOUND          999
 #define SCORE_OFFSET              32768
+#define RAT_TIMEOUT_MILLIS        15000
 
 #endif
